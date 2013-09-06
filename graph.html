@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Graph</title>
+</head>
+<body>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+<script src="viz.js"></script>
+<div id="out"></div>
+<div type="text/vnd.graphviz" id="svg" style="white-space: pre;">
+digraph Gateway {
+   graph [	fontname = "Helvetica-Oblique",
+		fontsize = 21,
+		label = "",
+		size = "96,96" ];
+   node [	shape = polygon,
+		sides = 4,
+		distortion = "0.0",
+		orientation = "0.0",
+		skew = "0.0",
+		color = white,
+		style = filled,
+		fontname = "Helvetica-Outline" ];
+</div>
+<script>
+$.ajax({
+	url:'/changes/?q=status:open+project:Gateway&o=ALL_REVISIONS&o=ALL_COMMITS',
+	accpets:'application/json',
+	dataType:'text',
+	success:function(json){
+		json=JSON.parse(json.substring(5));
+		var graph={};
+		var svg=$('#svg').html();
+		json.forEach(function(change){
+			for(var rev in change.revisions){
+				var revision=change.revisions[rev];
+				graph[rev]={
+					n: change.subject.replace(/"/g,'\\"') + " (" + change.change_id + ")",
+					dep: revision.commit.parents[0].commit,
+					id: change.change_id,
+					rev: rev,
+					status: change.status,
+					current: rev == change.current_revision
+				};
+			}
+		});
+		for(var rev in graph){
+                        var o=graph[rev];
+                        if(!o.dep in graph || !graph[o.dep]){
+				console.log('/changes/?q='+o.dep+' for '+o.id);
+				$.ajax({
+					url:'/changes/?q='+o.dep+'&o=ALL_REVISIONS&o=ALL_COMMITS',
+					accpets:'application/json',
+					dataType:'text',
+					success:function(json){
+						json=JSON.parse(json.substring(5));
+						json.forEach(function(change){
+							for(var rev in change.revisions){
+								console.log('reslove commit '+rev);
+								var revision=change.revisions[rev];
+								if(rev in graph || graph[rev]){
+									continue;
+								}
+								graph[rev]={
+									n: change.subject.replace(/"/g,'\\"') + " (" + change.change_id + ")",
+									dep: revision.commit.parents[0].commit,
+									id: change.change_id,
+									rev: rev,
+									status: change.status,
+									current: change.status=="MERGED"
+								};
+							}
+						});
+					},
+					async:false
+                                });
+                        }
+		}
+		var printed={};
+                for(var rev in graph){
+                        var o=graph[rev];
+			if(o.current && !(o.id in printed)){
+				svg+='\n    "' + o.id  + '" [sides=4 URL="/r/'+o.id+ '" target="_blank" label="'+o.n+'"';
+                                if(o.status=='MERGED'){
+					svg+=' color="green"';
+				}else if(!o.dep in graph || !graph[o.dep] || !graph[o.dep].current){
+					svg+=' color="red"';
+                                }
+                                svg+="];";
+				printed[o.id]=true;
+			}
+                }
+		for(var rev in graph){
+			var o=graph[rev];
+			if(o.current && graph[o.dep]){
+				svg+='\n    "' + o.id  + '" -> "' + graph[o.dep].id +'";';
+			}
+		}
+		for(var i=0;i<10;i++){
+			svg+="//                                            \n";
+		}
+		svg+='}';
+		$('#svg').text(svg);
+		$('#out').html(Viz(svg, 'svg'));
+		window.debugme=graph;
+	}
+});
+</script>
+</body>
+</html>
+
